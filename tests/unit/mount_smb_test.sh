@@ -209,6 +209,87 @@ test_mdutil_failure_is_nonfatal() {
   teardown
 }
 
+test_double_dash_delimiter() {
+  setup
+  run_capture "$REPO_DIR/macos/mount-smb.sh" -- "//server/share" "$TEST_TMP/mnt"
+  assert_status "exits 0 with double dash" 0 "$RUN_STATUS"
+  teardown
+}
+
+test_option_missing_arg() {
+  setup
+  run_capture "$REPO_DIR/macos/mount-smb.sh" -o
+  assert_status "exits 1 on -o without argument" 1 "$RUN_STATUS"
+
+  run_capture "$REPO_DIR/macos/mount-smb.sh" -o "" "//server/share" "$TEST_TMP/mnt"
+  assert_status "exits 1 on -o with empty argument" 1 "$RUN_STATUS"
+  teardown
+}
+
+test_multiple_extra_options() {
+  setup
+  run_capture "$REPO_DIR/macos/mount-smb.sh" -o "ro" -o "nostreams" "//server/share" "$TEST_TMP/mnt"
+  assert_status "exits 0 with multiple -o flags" 0 "$RUN_STATUS"
+
+  _test_multiple_extra_options_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "mount carries all accumulated options" "$_test_multiple_extra_options_mount_log" "-t smbfs -o nodatacache,nomdatacache,nobrowse,ro,nostreams //server/share $TEST_TMP/mnt"
+  teardown
+}
+
+test_invalid_urls() {
+  setup
+  for _test_invalid_urls_case in "/" "//" "///" "smb:///" "server/" "smb://server/" "///share" "/share" "//server//share"; do
+    run_capture "$REPO_DIR/macos/mount-smb.sh" "$_test_invalid_urls_case" "$TEST_TMP/mnt"
+    assert_status "exits 1 on invalid url [$_test_invalid_urls_case]" 1 "$RUN_STATUS"
+    assert_contains "reports invalid url for [$_test_invalid_urls_case]" "$RUN_STDOUT" "URL must include server and share"
+  done
+  teardown
+}
+
+test_normalize_url_leading_slashes() {
+  setup
+  for _test_normalize_url_leading_slashes_case in "/server/share" "///server/share" "smb:///server/share"; do
+    : > "$MOUNT_LOG"
+    run_capture "$REPO_DIR/macos/mount-smb.sh" "$_test_normalize_url_leading_slashes_case" "$TEST_TMP/mnt"
+    assert_status "exits 0 normalizing [$_test_normalize_url_leading_slashes_case]" 0 "$RUN_STATUS"
+    _test_normalize_url_leading_slashes_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+    assert_contains "normalizes leading slashes for [$_test_normalize_url_leading_slashes_case]" "$_test_normalize_url_leading_slashes_log" "//server/share $TEST_TMP/mnt"
+  done
+  teardown
+}
+
+test_url_with_credentials_and_domain() {
+  setup
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "smb://DOMAIN;user:pass@server/share" "$TEST_TMP/mnt"
+  assert_status "exits 0 with credentials and domain" 0 "$RUN_STATUS"
+
+  _test_url_with_credentials_and_domain_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "mount preserves domain and credentials" "$_test_url_with_credentials_and_domain_mount_log" "//DOMAIN;user:pass@server/share $TEST_TMP/mnt"
+  teardown
+}
+
+test_mount_failure_is_fatal() {
+  setup
+  MOCK_MOUNT_EXIT=1
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$TEST_TMP/mnt"
+  assert_status "exits non-zero when mount fails" 1 "$RUN_STATUS"
+
+  _test_mount_failure_is_fatal_mdutil_log=$(cat "$MDUTIL_LOG" 2>/dev/null || true)
+  assert_not_contains "mdutil not executed after mount failure" "$_test_mount_failure_is_fatal_mdutil_log" "-i off"
+  teardown
+}
+
+test_spaces_in_arguments() {
+  setup
+  _test_spaces_in_arguments_dir="$TEST_TMP/mount dir"
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/my share" "$_test_spaces_in_arguments_dir"
+  assert_status "exits 0 with spaces in share and mount point" 0 "$RUN_STATUS"
+
+  _test_spaces_in_arguments_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "mount preserves spaces in url and mount point" "$_test_spaces_in_arguments_mount_log" "//server/my share $_test_spaces_in_arguments_dir"
+  teardown
+}
+
 main() {
   test_help_short
   test_help_long
@@ -224,6 +305,14 @@ main() {
   test_extra_options
   test_creates_mount_directory
   test_mdutil_failure_is_nonfatal
+  test_double_dash_delimiter
+  test_option_missing_arg
+  test_multiple_extra_options
+  test_invalid_urls
+  test_normalize_url_leading_slashes
+  test_url_with_credentials_and_domain
+  test_mount_failure_is_fatal
+  test_spaces_in_arguments
   test_summary
 }
 

@@ -71,5 +71,5 @@ run_capture() {
 
 test_summary() {
   printf '\n%d run, %d failed\n' "$TESTS_RUN" "$TESTS_FAILED"
-  [ "$TESTS_FAILED" -eq 0 ]
+  [ "$TESTS_RUN" -gt 0 ] && [ "$TESTS_FAILED" -eq 0 ]
 }
