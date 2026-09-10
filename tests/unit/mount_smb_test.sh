@@ -10,6 +10,50 @@ readonly SCRIPT_DIR
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 readonly REPO_DIR
 
+_create_mock_uname() {
+  _create_mock_uname_dir="$1"
+  cat <<'EOF' >"$_create_mock_uname_dir/uname"
+#!/bin/sh
+set -eu
+if [ "${1:-}" = "-s" ]; then
+  echo "${UNAME_OS:-Darwin}"
+  exit 0
+fi
+exec /usr/bin/uname "$@"
+EOF
+  chmod +x "$_create_mock_uname_dir/uname"
+}
+
+_create_mock_mount() {
+  _create_mock_mount_dir="$1"
+  cat <<'EOF' >"$_create_mock_mount_dir/mount"
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$MOUNT_LOG"
+exit "${MOCK_MOUNT_EXIT:-0}"
+EOF
+  chmod +x "$_create_mock_mount_dir/mount"
+}
+
+_create_mock_mdutil() {
+  _create_mock_mdutil_dir="$1"
+  cat <<'EOF' >"$_create_mock_mdutil_dir/mdutil"
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$MDUTIL_LOG"
+exit "${MOCK_MDUTIL_EXIT:-0}"
+EOF
+  chmod +x "$_create_mock_mdutil_dir/mdutil"
+}
+
+_create_mocks() {
+  _create_mocks_dir="$1"
+  mkdir -p "$_create_mocks_dir"
+  _create_mock_uname "$_create_mocks_dir"
+  _create_mock_mount "$_create_mocks_dir"
+  _create_mock_mdutil "$_create_mocks_dir"
+}
+
 setup() {
   TEST_TMP="$(mktemp -d)"
   export TEST_TMP
@@ -19,34 +63,7 @@ setup() {
   export MOCK_MOUNT_EXIT=0
   export MOCK_MDUTIL_EXIT=0
 
-  mkdir -p "$TEST_TMP/bin"
-
-  cat <<'EOF' >"$TEST_TMP/bin/uname"
-#!/bin/sh
-set -eu
-if [ "${1:-}" = "-s" ]; then
-  echo "${UNAME_OS:-Darwin}"
-  exit 0
-fi
-exec /usr/bin/uname "$@"
-EOF
-  chmod +x "$TEST_TMP/bin/uname"
-
-  cat <<'EOF' >"$TEST_TMP/bin/mount"
-#!/bin/sh
-set -eu
-printf '%s\n' "$*" >> "$MOUNT_LOG"
-exit "${MOCK_MOUNT_EXIT:-0}"
-EOF
-  chmod +x "$TEST_TMP/bin/mount"
-
-  cat <<'EOF' >"$TEST_TMP/bin/mdutil"
-#!/bin/sh
-set -eu
-printf '%s\n' "$*" >> "$MDUTIL_LOG"
-exit "${MOCK_MDUTIL_EXIT:-0}"
-EOF
-  chmod +x "$TEST_TMP/bin/mdutil"
+  _create_mocks "$TEST_TMP/bin"
 
   OLD_PATH="$PATH"
   export OLD_PATH
@@ -133,11 +150,11 @@ test_successful_mount_default_opts() {
   run_capture "$REPO_DIR/macos/mount-smb.sh" "smb://user@server/share" "$TEST_TMP/mnt"
   assert_status "exits 0 on valid mount" 0 "$RUN_STATUS"
 
-  _mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
-  assert_contains "mount invoked with smbfs and default opts" "$_mount_log" "-t smbfs -o nodatacache,nomdatacache,nobrowse //user@server/share $TEST_TMP/mnt"
+  _test_successful_mount_default_opts_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "mount invoked with smbfs and default opts" "$_test_successful_mount_default_opts_mount_log" "-t smbfs -o nodatacache,nomdatacache,nobrowse //user@server/share $TEST_TMP/mnt"
 
-  _mdutil_log=$(cat "$MDUTIL_LOG" 2>/dev/null || true)
-  assert_contains "mdutil disables indexing" "$_mdutil_log" "-i off $TEST_TMP/mnt"
+  _test_successful_mount_default_opts_mdutil_log=$(cat "$MDUTIL_LOG" 2>/dev/null || true)
+  assert_contains "mdutil disables indexing" "$_test_successful_mount_default_opts_mdutil_log" "-i off $TEST_TMP/mnt"
   teardown
 }
 
@@ -146,8 +163,8 @@ test_normalize_url_slashes() {
   run_capture "$REPO_DIR/macos/mount-smb.sh" "smb://server/share/" "$TEST_TMP/mnt"
   assert_status "exits 0 with trailing slash" 0 "$RUN_STATUS"
 
-  _mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
-  assert_contains "trailing slash stripped" "$_mount_log" "//server/share $TEST_TMP/mnt"
+  _test_normalize_url_slashes_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "trailing slash stripped" "$_test_normalize_url_slashes_mount_log" "//server/share $TEST_TMP/mnt"
   teardown
 }
 
@@ -156,8 +173,8 @@ test_normalize_url_without_prefix() {
   run_capture "$REPO_DIR/macos/mount-smb.sh" "server/share" "$TEST_TMP/mnt"
   assert_status "exits 0 without prefix" 0 "$RUN_STATUS"
 
-  _mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
-  assert_contains "prefix added" "$_mount_log" "//server/share $TEST_TMP/mnt"
+  _test_normalize_url_without_prefix_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "prefix added" "$_test_normalize_url_without_prefix_mount_log" "//server/share $TEST_TMP/mnt"
   teardown
 }
 
@@ -166,17 +183,17 @@ test_extra_options() {
   run_capture "$REPO_DIR/macos/mount-smb.sh" -o "ro,nostreams" "//server/share" "$TEST_TMP/mnt"
   assert_status "exits 0 with extra options" 0 "$RUN_STATUS"
 
-  _mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
-  assert_contains "mount carries extra options" "$_mount_log" "-t smbfs -o nodatacache,nomdatacache,nobrowse,ro,nostreams //server/share $TEST_TMP/mnt"
+  _test_extra_options_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "mount carries extra options" "$_test_extra_options_mount_log" "-t smbfs -o nodatacache,nomdatacache,nobrowse,ro,nostreams //server/share $TEST_TMP/mnt"
   teardown
 }
 
 test_creates_mount_directory() {
   setup
-  _target_dir="$TEST_TMP/new_mnt_dir"
-  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_target_dir"
+  _test_creates_mount_directory_target_dir="$TEST_TMP/new_mnt_dir"
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_test_creates_mount_directory_target_dir"
   assert_status "exits 0 creating mount point" 0 "$RUN_STATUS"
-  if [ -d "$_target_dir" ]; then
+  if [ -d "$_test_creates_mount_directory_target_dir" ]; then
     pass "creates mount point directory"
   else
     fail "creates mount point directory" "directory was not created"
