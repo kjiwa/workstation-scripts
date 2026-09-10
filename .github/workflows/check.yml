@@ -1,0 +1,14 @@
+name: check
+on:
+  push:
+  pull_request:
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run check script
+        run: ./bin/check.sh
