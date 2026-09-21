@@ -1,12 +1,21 @@
 name: check
 on:
   push:
+    branches: [main]
   pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ (github.ref == 'refs/heads/main' || github.event_name == 'schedule')
+          && fromJSON('["ubuntu-latest","macos-latest"]')
+          || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
