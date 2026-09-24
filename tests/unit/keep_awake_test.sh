@@ -123,6 +123,9 @@ test_help_short() {
   run_capture "$REPO_DIR/macos/keep-awake.sh" -h
   assert_status "exits 0 on -h" 0 "$RUN_STATUS"
   assert_contains "shows usage on -h" "$RUN_STDOUT" "Usage: keep-awake.sh"
+  assert_contains "shows command arg on -h" "$RUN_STDOUT" "command [args...]"
+  assert_contains "shows caffeinate on -h" "$RUN_STDOUT" "caffeinate"
+  assert_contains "shows Ctrl-C on -h" "$RUN_STDOUT" "Ctrl-C"
   teardown
 }
 
@@ -131,6 +134,10 @@ test_help_long() {
   run_capture "$REPO_DIR/macos/keep-awake.sh" --help
   assert_status "exits 0 on --help" 0 "$RUN_STATUS"
   assert_contains "shows usage on --help" "$RUN_STDOUT" "Usage: keep-awake.sh"
+  assert_contains "shows command arg on --help" "$RUN_STDOUT" "command [args...]"
+  assert_contains "shows caffeinate on --help" "$RUN_STDOUT" "caffeinate"
+  assert_contains "shows Ctrl-C on --help" "$RUN_STDOUT" "Ctrl-C"
+  assert_contains "shows disablesleep on --help" "$RUN_STDOUT" "pmset -a disablesleep 1"
   teardown
 }
 

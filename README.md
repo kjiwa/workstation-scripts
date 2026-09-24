@@ -41,6 +41,9 @@ Prevents macOS from sleeping when idle or when the laptop lid is closed.
 macos/keep-awake.sh [-h|--help] [--] [command [args...]]
 ```
 
+Arguments:
+- `command [args...]`: Optional command to run. When specified, executes the command under `caffeinate` while sleep is disabled, restores original sleep settings on completion, and exits with the command's exit code. When omitted, keeps the system awake interactively until interrupted with `Ctrl-C`.
+
 Options:
 - `-h`, `--help`: Show usage.
 - `--`: Treat subsequent arguments as a command.
@@ -51,7 +54,7 @@ Behavior:
 - If no command is specified, keeps the system awake until interrupted with `Ctrl-C`.
 - Maintains a background `sudo` keep-alive loop so authentication does not expire during long executions.
 - Restores original sleep settings on exit or signal (`SIGINT`, `SIGTERM`, `SIGHUP`).
-- Requires macOS (Darwin) and root privileges for `pmset`.
+- Requires macOS (Darwin) and sudo access for `pmset`.
 
 Examples:
 

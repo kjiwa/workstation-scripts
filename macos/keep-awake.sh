@@ -9,7 +9,31 @@ _sleep_modified=0
 
 _usage() {
   _usage_prog="$1"
-  printf 'Usage: %s [-h|--help] [--] [command [args...]]\n' "$_usage_prog"
+  cat <<EOF
+Usage: $_usage_prog [-h|--help] [--] [command [args...]]
+
+Prevent macOS from sleeping when idle or when the laptop lid is closed.
+
+Arguments:
+  command [args...]  Optional command to run. If provided, the command is
+                     executed with caffeinate while sleep is disabled. When
+                     the command exits, original sleep settings are restored
+                     and the command's exit code is returned.
+                     If omitted, the system stays awake interactively until
+                     interrupted with Ctrl-C.
+
+Options:
+  -h, --help         Show this help message and exit.
+  --                 Treat all following arguments as a command, even if
+                     they begin with a dash.
+
+Behavior:
+  - Disables sleep via 'pmset -a disablesleep 1' and runs 'caffeinate'.
+  - Runs a background sudo keep-alive to maintain credentials during
+    long-running tasks.
+  - Restores the previous sleep state on exit or signal (INT, TERM, HUP).
+  - Requires macOS and sudo access for pmset.
+EOF
 }
 
 _exit_usage() {
