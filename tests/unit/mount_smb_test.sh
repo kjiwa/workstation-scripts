@@ -80,6 +80,9 @@ test_help_short() {
   run_capture "$REPO_DIR/macos/mount-smb.sh" -h
   assert_status "exits 0 on -h" 0 "$RUN_STATUS"
   assert_contains "shows usage on -h" "$RUN_STDOUT" "Usage: mount-smb.sh"
+  assert_contains "shows mount_point arg on -h" "$RUN_STDOUT" "<mount_point>"
+  assert_contains "shows extra_opts on -h" "$RUN_STDOUT" "-o extra_opts"
+  assert_contains "shows default opts on -h" "$RUN_STDOUT" "nodatacache"
   teardown
 }
 
@@ -88,6 +91,10 @@ test_help_long() {
   run_capture "$REPO_DIR/macos/mount-smb.sh" --help
   assert_status "exits 0 on --help" 0 "$RUN_STATUS"
   assert_contains "shows usage on --help" "$RUN_STDOUT" "Usage: mount-smb.sh"
+  assert_contains "shows mount_point arg on --help" "$RUN_STDOUT" "<mount_point>"
+  assert_contains "shows extra_opts on --help" "$RUN_STDOUT" "-o extra_opts"
+  assert_contains "shows default opts on --help" "$RUN_STDOUT" "nodatacache"
+  assert_contains "shows mdutil on --help" "$RUN_STDOUT" "mdutil -i off"
   teardown
 }
 
