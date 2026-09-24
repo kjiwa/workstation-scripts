@@ -5,7 +5,34 @@ readonly DEFAULT_OPTS="nodatacache,nomdatacache,nobrowse"
 
 _usage() {
   _usage_prog="$1"
-  printf 'Usage: %s [-o extra_opts] <//user@server/share> <mount_point>\n' "$_usage_prog"
+  cat <<EOF
+Usage: $_usage_prog [-h|--help] [-o extra_opts] <//user@server/share> <mount_point>
+
+Mount an SMB share on macOS with safe defaults.
+
+Arguments:
+  <//user@server/share>  SMB share URL or UNC path (e.g. //user@server/share
+                         or smb://server/share).
+  <mount_point>          Local directory where the share will be mounted.
+
+Options:
+  -o extra_opts          Additional comma-delimited options passed to
+                         mount -t smbfs. May be specified multiple times.
+  -h, --help             Show this help message and exit.
+  --                     Treat all following arguments as positional arguments.
+
+Behavior:
+  - Applies default mount options: nodatacache, nomdatacache, nobrowse.
+  - Normalizes share URLs by stripping leading smb:, reducing leading
+    slashes to //, and removing trailing slashes.
+  - Creates the mount point directory if it does not already exist.
+  - Disables Spotlight indexing on the mount point via mdutil -i off.
+  - Requires macOS.
+
+Examples:
+  $_usage_prog //user@nas.local/share ~/mnt/share
+  $_usage_prog -o ro,nostreams smb://nas.local/data ~/mnt/data
+EOF
 }
 
 _exit_usage() {

@@ -9,12 +9,17 @@ POSIX shell utilities for workstation administration and configuration.
 Mounts an SMB share on macOS with safe defaults.
 
 ```sh
-macos/mount-smb.sh [-o extra_opts] <//user@server/share> <mount_point>
+macos/mount-smb.sh [-h|--help] [-o extra_opts] [--] <//user@server/share> <mount_point>
 ```
+
+Arguments:
+- `<//user@server/share>`: SMB share URL or UNC path (e.g. `//user@server/share` or `smb://server/share`).
+- `<mount_point>`: Local directory where the share will be mounted.
 
 Options:
 - `-o extra_opts`: Additional comma-delimited options passed to `mount -t smbfs`. May be specified multiple times.
 - `-h`, `--help`: Show usage.
+- `--`: Treat subsequent arguments as positional arguments.
 
 Behavior:
 - Applies default mount options: `nodatacache`, `nomdatacache`, and `nobrowse`.
