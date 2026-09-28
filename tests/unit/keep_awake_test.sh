@@ -35,7 +35,14 @@ case "${1:-}" in
     exit "${MOCK_SUDO_V_EXIT:-0}"
     ;;
   -n)
-    exit 0
+    shift
+    if [ "${1:-}" = "-v" ]; then
+      exit "${MOCK_SUDO_N_EXIT:-0}"
+    fi
+    if [ "${MOCK_SUDO_N_EXIT:-0}" -ne 0 ]; then
+      exit "${MOCK_SUDO_N_EXIT:-0}"
+    fi
+    exec "$@"
     ;;
   *)
     exec "$@"
@@ -97,6 +104,7 @@ setup() {
   export CAFFEINATE_LOG="$TEST_TMP/caffeinate.log"
   export UNAME_OS="Darwin"
   export MOCK_SUDO_V_EXIT=0
+  export MOCK_SUDO_N_EXIT=0
   export MOCK_PMSET_SLEEP_DISABLED=0
   export MOCK_PMSET_DISABLESLEEP_EXIT=0
   export MOCK_CAFFEINATE_EXIT=0
@@ -218,6 +226,18 @@ test_propagates_command_exit_code() {
   teardown
 }
 
+test_restore_sleep_sudo_failure_reports_loudly() {
+  setup
+  MOCK_PMSET_SLEEP_DISABLED=0
+  MOCK_SUDO_N_EXIT=1
+  run_capture "$REPO_DIR/macos/keep-awake.sh" sh -c "echo hello"
+  assert_status "still exits 0 despite restore failure" 0 "$RUN_STATUS"
+  assert_contains "command output present" "$RUN_STDOUT" "hello"
+  assert_contains "reports restore failure loudly" "$RUN_STDOUT" "failed to restore sleep settings"
+  assert_contains "names the manual fix command" "$RUN_STDOUT" "sudo pmset -a disablesleep 0"
+  teardown
+}
+
 test_double_dash_delimiter() {
   setup
   MOCK_PMSET_SLEEP_DISABLED=0
@@ -335,6 +355,7 @@ main() {
   test_already_disabled_runs_command_and_does_not_modify_sleep
   test_disables_and_restores_sleep_around_command
   test_propagates_command_exit_code
+  test_restore_sleep_sudo_failure_reports_loudly
   test_double_dash_delimiter
   test_interactive_mode_runs_caffeinate
   test_sigterm_restores_sleep

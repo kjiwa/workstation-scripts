@@ -265,13 +265,28 @@ test_normalize_url_leading_slashes() {
   teardown
 }
 
-test_url_with_credentials_and_domain() {
+test_url_with_domain_and_user_no_password() {
   setup
-  run_capture "$REPO_DIR/macos/mount-smb.sh" "smb://DOMAIN;user:pass@server/share" "$TEST_TMP/mnt"
-  assert_status "exits 0 with credentials and domain" 0 "$RUN_STATUS"
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "smb://DOMAIN;user@server/share" "$TEST_TMP/mnt"
+  assert_status "exits 0 with domain and user" 0 "$RUN_STATUS"
 
-  _test_url_with_credentials_and_domain_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
-  assert_contains "mount preserves domain and credentials" "$_test_url_with_credentials_and_domain_mount_log" "//DOMAIN;user:pass@server/share $TEST_TMP/mnt"
+  _test_url_with_domain_and_user_no_password_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "mount preserves domain and user" "$_test_url_with_domain_and_user_no_password_mount_log" "//DOMAIN;user@server/share $TEST_TMP/mnt"
+  teardown
+}
+
+test_url_with_password_is_rejected() {
+  setup
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "smb://user:pass@server/share" "$TEST_TMP/mnt"
+  assert_status "exits 1 with password in URL" 1 "$RUN_STATUS"
+  assert_contains "reports password rejected" "$RUN_STDOUT" "URL must not contain a password"
+
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "smb://DOMAIN;user:pass@server/share" "$TEST_TMP/mnt"
+  assert_status "exits 1 with password and domain in URL" 1 "$RUN_STATUS"
+  assert_contains "reports password rejected with domain" "$RUN_STDOUT" "URL must not contain a password"
+
+  _test_url_with_password_is_rejected_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_eq "mount never invoked with a password in the URL" "" "$_test_url_with_password_is_rejected_mount_log"
   teardown
 }
 
@@ -283,6 +298,35 @@ test_mount_failure_is_fatal() {
 
   _test_mount_failure_is_fatal_mdutil_log=$(cat "$MDUTIL_LOG" 2>/dev/null || true)
   assert_not_contains "mdutil not executed after mount failure" "$_test_mount_failure_is_fatal_mdutil_log" "-i off"
+  teardown
+}
+
+test_mount_failure_removes_created_mount_point() {
+  setup
+  MOCK_MOUNT_EXIT=1
+  _test_mount_failure_removes_created_mount_point_dir="$TEST_TMP/new_mnt_dir"
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_test_mount_failure_removes_created_mount_point_dir"
+  assert_status "exits non-zero when mount fails" 1 "$RUN_STATUS"
+  if [ -d "$_test_mount_failure_removes_created_mount_point_dir" ]; then
+    fail "removes mount point it created on mount failure" "directory still exists"
+  else
+    pass "removes mount point it created on mount failure"
+  fi
+  teardown
+}
+
+test_mount_failure_keeps_preexisting_mount_point() {
+  setup
+  MOCK_MOUNT_EXIT=1
+  _test_mount_failure_keeps_preexisting_mount_point_dir="$TEST_TMP/preexisting_mnt_dir"
+  mkdir -p "$_test_mount_failure_keeps_preexisting_mount_point_dir"
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_test_mount_failure_keeps_preexisting_mount_point_dir"
+  assert_status "exits non-zero when mount fails" 1 "$RUN_STATUS"
+  if [ -d "$_test_mount_failure_keeps_preexisting_mount_point_dir" ]; then
+    pass "keeps pre-existing mount point on mount failure"
+  else
+    fail "keeps pre-existing mount point on mount failure" "directory was removed"
+  fi
   teardown
 }
 
@@ -317,8 +361,11 @@ main() {
   test_multiple_extra_options
   test_invalid_urls
   test_normalize_url_leading_slashes
-  test_url_with_credentials_and_domain
+  test_url_with_domain_and_user_no_password
+  test_url_with_password_is_rejected
   test_mount_failure_is_fatal
+  test_mount_failure_removes_created_mount_point
+  test_mount_failure_keeps_preexisting_mount_point
   test_spaces_in_arguments
   test_summary
 }

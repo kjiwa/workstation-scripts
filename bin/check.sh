@@ -20,6 +20,7 @@ _lint_scripts() {
   if command -v shellcheck >/dev/null 2>&1; then
     find "$_lint_scripts_dir" -name "*.sh" -not -path '*/.*' -exec shellcheck -s sh -x -P SCRIPTDIR {} +
   else
+    printf 'warning: shellcheck not found; falling back to sh -n (syntax only, no lint checks)\n' >&2
     find "$_lint_scripts_dir" -name "*.sh" -not -path '*/.*' -exec sh -n {} +
   fi
 }

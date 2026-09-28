@@ -24,7 +24,10 @@ Options:
 Behavior:
 - Applies default mount options: `nodatacache`, `nomdatacache`, and `nobrowse`.
 - Normalizes share URLs by stripping leading `smb:`, reducing leading slashes to `//`, and removing trailing slashes.
-- Creates the mount point directory if it does not already exist.
+- Rejects URLs with a password embedded before the `@` (e.g. `smb://user:pass@server/share`); it
+  leaks into `ps` output and shell history. Omit the password and let macOS prompt or use Keychain.
+- Creates the mount point directory if it does not already exist, and removes it again if the
+  mount fails, but only if this run created it.
 - Disables Spotlight indexing on the mount point via `mdutil -i off`.
 - Requires macOS (Darwin).
 

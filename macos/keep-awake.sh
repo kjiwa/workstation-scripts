@@ -109,7 +109,9 @@ _cleanup() {
   if [ "$_sleep_modified" -eq 1 ]; then
     _sleep_modified=0
     printf 'Restoring sleep settings...\n' >&2
-    sudo pmset -a disablesleep 0 >/dev/null 2>&1 || true
+    if ! sudo -n pmset -a disablesleep 0 >/dev/null 2>&1; then
+      printf '%s: error: failed to restore sleep settings (sudo credentials may have expired); run manually: sudo pmset -a disablesleep 0\n' "$_main_prog" >&2
+    fi
   fi
 
   if [ "$_cleanup_status" -eq 0 ] && [ "$_cleanup_exit_code" -ne 0 ]; then
