@@ -6,6 +6,8 @@ on:
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
+permissions:
+  contents: read
 concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: true
@@ -18,6 +20,10 @@ jobs:
           || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Run check script
         run: ./bin/check.sh
+  privacy:
+    uses: kjiwa/.github/.github/workflows/privacy.yml@main

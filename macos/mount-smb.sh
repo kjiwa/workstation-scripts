@@ -25,7 +25,10 @@ Behavior:
   - Applies default mount options: nodatacache, nomdatacache, nobrowse.
   - Normalizes share URLs by stripping leading smb:, reducing leading
     slashes to //, and removing trailing slashes.
-  - Creates the mount point directory if it does not already exist.
+  - Rejects a password embedded in the URL (e.g. user:pass@server); omit the
+    password and let macOS prompt or use Keychain.
+  - Creates the mount point directory if it does not already exist, and
+    removes it again if the mount fails, but only if this run created it.
   - Disables Spotlight indexing on the mount point via mdutil -i off.
   - Requires macOS.
 
@@ -79,6 +82,18 @@ _normalize_url() {
     printf '%s: error: URL must include server and share: %s\n' "$_normalize_url_prog" "$_normalize_url_raw" >&2
     exit 1
   fi
+
+  case "$_normalize_url_server" in
+    *@*)
+      _normalize_url_userinfo="${_normalize_url_server%@*}"
+      case "$_normalize_url_userinfo" in
+        *:*)
+          printf '%s: error: URL must not contain a password (it leaks via ps and shell history); omit the password from the URL and let macOS prompt or use Keychain: %s\n' "$_normalize_url_prog" "$_normalize_url_raw" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+  esac
 
   case "$_normalize_url_path" in
     *//* )
@@ -140,8 +155,23 @@ main() {
   _main_url="$(_normalize_url "$_main_prog" "$_main_raw_url")"
   _main_opts="$DEFAULT_OPTS${_main_extra_opts:+,$_main_extra_opts}"
 
+  _main_mount_point_created=0
+  if [ ! -d "$_main_mount_point" ]; then
+    _main_mount_point_created=1
+  fi
   mkdir -p "$_main_mount_point"
+
+  set +e
   mount -t smbfs -o "$_main_opts" "$_main_url" "$_main_mount_point"
+  _main_mount_status=$?
+  set -e
+  if [ "$_main_mount_status" -ne 0 ]; then
+    if [ "$_main_mount_point_created" -eq 1 ]; then
+      rmdir "$_main_mount_point" 2>/dev/null || true
+    fi
+    exit "$_main_mount_status"
+  fi
+
   _disable_indexing "$_main_mount_point"
 }
 
