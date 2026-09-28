@@ -31,10 +31,22 @@ EOF
   chmod +x "$_create_scratch_repo_dir/bin/sample.sh"
 }
 
+# Builds $TEST_TMP/path/ with symlinks to exactly the external commands
+# bin/check.sh invokes, so shellcheck stays hidden regardless of where the
+# host installs it.
+_create_minimal_path() {
+  _create_minimal_path_dir="$1"
+  mkdir -p "$_create_minimal_path_dir"
+  for _create_minimal_path_cmd in sh dirname find tail; do
+    ln -s "$(command -v "$_create_minimal_path_cmd")" "$_create_minimal_path_dir/$_create_minimal_path_cmd"
+  done
+}
+
 setup() {
   TEST_TMP="$(mktemp -d)"
   export TEST_TMP
   _create_scratch_repo "$TEST_TMP/repo"
+  _create_minimal_path "$TEST_TMP/path"
 
   OLD_PATH="$PATH"
   export OLD_PATH
@@ -47,7 +59,7 @@ teardown() {
 
 test_warns_when_shellcheck_missing() {
   setup
-  run_capture env PATH=/usr/bin:/bin "$TEST_TMP/repo/bin/check.sh"
+  run_capture env PATH="$TEST_TMP/path" "$TEST_TMP/repo/bin/check.sh"
   assert_status "still exits 0 when shellcheck is missing" 0 "$RUN_STATUS"
   assert_contains "warns that shellcheck is missing" "$RUN_STDOUT" "shellcheck not found"
   teardown
