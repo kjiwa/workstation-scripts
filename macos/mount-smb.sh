@@ -22,6 +22,10 @@ Options:
   --                     Treat all following arguments as positional arguments.
 
 Behavior:
+  - Runs as the unprivileged user so the mounted share is owned by and
+    accessible to that user account; rejects running as root.
+  - Prompts for sudo only if needed to create or chown the mount point
+    (e.g. when mounting under /Volumes).
   - Applies default mount options: nodatacache, nomdatacache, nobrowse.
   - Normalizes share URLs by stripping leading smb:, reducing leading
     slashes to //, and removing trailing slashes.
@@ -34,6 +38,7 @@ Behavior:
 
 Examples:
   $_usage_prog //user@nas.local/share ~/mnt/share
+  $_usage_prog //user@nas.local/share /Volumes/nas
   $_usage_prog -o ro,nostreams smb://nas.local/data ~/mnt/data
 EOF
 }
@@ -53,6 +58,22 @@ _check_platform() {
   _check_platform_prog="$1"
   if [ "$(uname -s)" != "Darwin" ]; then
     printf '%s: error: macOS (Darwin) required\n' "$_check_platform_prog" >&2
+    exit 1
+  fi
+}
+
+_check_not_root() {
+  _check_not_root_prog="$1"
+  if [ "$(id -u)" -eq 0 ]; then
+    printf '%s: error: do not run as root; run as your normal user (sudo will be requested if needed)\n' "$_check_not_root_prog" >&2
+    exit 1
+  fi
+}
+
+_check_sudo() {
+  _check_sudo_prog="$1"
+  if ! sudo -v; then
+    printf '%s: error: sudo authentication failed\n' "$_check_sudo_prog" >&2
     exit 1
   fi
 }
@@ -148,6 +169,7 @@ main() {
   fi
 
   _check_platform "$_main_prog"
+  _check_not_root "$_main_prog"
 
   _main_raw_url="$1"
   _main_mount_point="$2"
@@ -155,11 +177,37 @@ main() {
   _main_url="$(_normalize_url "$_main_prog" "$_main_raw_url")"
   _main_opts="$DEFAULT_OPTS${_main_extra_opts:+,$_main_extra_opts}"
 
+  _main_uid="$(id -u)"
+  _main_gid="$(id -g)"
+
   _main_mount_point_created=0
+  _main_mount_point_sudo=0
+  _main_sudo_checked=0
+
   if [ ! -d "$_main_mount_point" ]; then
     _main_mount_point_created=1
+    if ! mkdir -p "$_main_mount_point" 2>/dev/null; then
+      _check_sudo "$_main_prog"
+      _main_sudo_checked=1
+      _main_mount_point_sudo=1
+      if ! sudo mkdir -p "$_main_mount_point"; then
+        printf '%s: error: failed to create mount point: %s\n' "$_main_prog" "$_main_mount_point" >&2
+        exit 1
+      fi
+    fi
   fi
-  mkdir -p "$_main_mount_point"
+
+  _main_owner_uid="$(stat -f '%u' "$_main_mount_point" 2>/dev/null || true)"
+  if [ "$_main_mount_point_sudo" -eq 1 ] || [ "$_main_owner_uid" != "$_main_uid" ]; then
+    if [ "$_main_sudo_checked" -eq 0 ]; then
+      _check_sudo "$_main_prog"
+      _main_sudo_checked=1
+    fi
+    if ! sudo chown "$_main_uid:$_main_gid" "$_main_mount_point"; then
+      printf '%s: error: failed to set ownership on mount point: %s\n' "$_main_prog" "$_main_mount_point" >&2
+      exit 1
+    fi
+  fi
 
   set +e
   mount -t smbfs -o "$_main_opts" "$_main_url" "$_main_mount_point"
@@ -167,7 +215,11 @@ main() {
   set -e
   if [ "$_main_mount_status" -ne 0 ]; then
     if [ "$_main_mount_point_created" -eq 1 ]; then
-      rmdir "$_main_mount_point" 2>/dev/null || true
+      if [ "$_main_mount_point_sudo" -eq 1 ]; then
+        sudo rmdir "$_main_mount_point" 2>/dev/null || true
+      else
+        rmdir "$_main_mount_point" 2>/dev/null || true
+      fi
     fi
     exit "$_main_mount_status"
   fi

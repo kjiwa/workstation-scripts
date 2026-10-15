@@ -22,6 +22,10 @@ Options:
 - `--`: Treat subsequent arguments as positional arguments.
 
 Behavior:
+- Runs as the unprivileged user so the mounted share is owned by and accessible to that user account;
+  rejects running as root.
+- Prompts for sudo only if needed to create or chown the mount point (e.g. when mounting under
+  `/Volumes`).
 - Applies default mount options: `nodatacache`, `nomdatacache`, and `nobrowse`.
 - Normalizes share URLs by stripping leading `smb:`, reducing leading slashes to `//`, and removing trailing slashes.
 - Rejects URLs with a password embedded before the `@` (e.g. `smb://user:pass@server/share`); it
@@ -34,8 +38,11 @@ Behavior:
 Examples:
 
 ```sh
-# Basic mount
+# Basic mount in home directory
 macos/mount-smb.sh //user@nas.local/share ~/mnt/share
+
+# Mount under /Volumes (prompts for sudo only to prepare /Volumes/nas)
+macos/mount-smb.sh //user@nas.local/share /Volumes/nas
 
 # Full SMB URI with extra mount options
 macos/mount-smb.sh -o ro,nostreams smb://nas.local/data ~/mnt/data
