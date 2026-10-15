@@ -46,12 +46,103 @@ EOF
   chmod +x "$_create_mock_mdutil_dir/mdutil"
 }
 
+_create_mock_id() {
+  _create_mock_id_dir="$1"
+  cat <<'EOF' >"$_create_mock_id_dir/id"
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  -u)
+    echo "${MOCK_ID_U:-501}"
+    ;;
+  -g)
+    echo "${MOCK_ID_G:-20}"
+    ;;
+  *)
+    exec env PATH="$OLD_PATH" id "$@"
+    ;;
+esac
+EOF
+  chmod +x "$_create_mock_id_dir/id"
+}
+
+_create_mock_stat() {
+  _create_mock_stat_dir="$1"
+  cat <<'EOF' >"$_create_mock_stat_dir/stat"
+#!/bin/sh
+set -eu
+if [ "${1:-}" = "-f" ] && [ "${2:-}" = "%u" ]; then
+  echo "${MOCK_STAT_UID:-501}"
+  exit 0
+fi
+exec env PATH="$OLD_PATH" stat "$@"
+EOF
+  chmod +x "$_create_mock_stat_dir/stat"
+}
+
+_create_mock_sudo() {
+  _create_mock_sudo_dir="$1"
+  cat <<'EOF' >"$_create_mock_sudo_dir/sudo"
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$SUDO_LOG"
+case "${1:-}" in
+  -v)
+    exit "${MOCK_SUDO_V_EXIT:-0}"
+    ;;
+  mkdir)
+    shift
+    exit_code="${MOCK_SUDO_MKDIR_EXIT:-0}"
+    if [ "$exit_code" -ne 0 ]; then
+      exit "$exit_code"
+    fi
+    for _sudo_arg in "$@"; do
+      case "$_sudo_arg" in
+        -*) continue ;;
+        *)
+          _sudo_parent="$(dirname "$_sudo_arg")"
+          while [ "$_sudo_parent" != "." ] && [ "$_sudo_parent" != "/" ] && [ -d "$_sudo_parent" ]; do
+            chmod u+w "$_sudo_parent" 2>/dev/null || true
+            _sudo_parent="$(dirname "$_sudo_parent")"
+          done
+          ;;
+      esac
+    done
+    exec mkdir "$@"
+    ;;
+  chown)
+    shift
+    exit "${MOCK_SUDO_CHOWN_EXIT:-0}"
+    ;;
+  rmdir)
+    shift
+    exit_code="${MOCK_SUDO_RMDIR_EXIT:-0}"
+    if [ "$exit_code" -ne 0 ]; then
+      exit "$exit_code"
+    fi
+    for _sudo_arg in "$@"; do
+      _sudo_parent="$(dirname "$_sudo_arg")"
+      chmod u+w "$_sudo_parent" 2>/dev/null || true
+    done
+    exec rmdir "$@"
+    ;;
+  *)
+    exec "$@"
+    ;;
+esac
+EOF
+  chmod +x "$_create_mock_sudo_dir/sudo"
+}
+
 _create_mocks() {
   _create_mocks_dir="$1"
   mkdir -p "$_create_mocks_dir"
   _create_mock_uname "$_create_mocks_dir"
   _create_mock_mount "$_create_mocks_dir"
   _create_mock_mdutil "$_create_mocks_dir"
+  _create_mock_id "$_create_mocks_dir"
+  _create_mock_stat "$_create_mocks_dir"
+  _create_mock_sudo "$_create_mocks_dir"
 }
 
 setup() {
@@ -59,9 +150,21 @@ setup() {
   export TEST_TMP
   export MOUNT_LOG="$TEST_TMP/mount.log"
   export MDUTIL_LOG="$TEST_TMP/mdutil.log"
+  export SUDO_LOG="$TEST_TMP/sudo.log"
   export UNAME_OS="Darwin"
   export MOCK_MOUNT_EXIT=0
   export MOCK_MDUTIL_EXIT=0
+  export MOCK_ID_U=501
+  export MOCK_ID_G=20
+  export MOCK_STAT_UID=501
+  export MOCK_SUDO_V_EXIT=0
+  export MOCK_SUDO_MKDIR_EXIT=0
+  export MOCK_SUDO_CHOWN_EXIT=0
+  export MOCK_SUDO_RMDIR_EXIT=0
+
+  : > "$MOUNT_LOG"
+  : > "$MDUTIL_LOG"
+  : > "$SUDO_LOG"
 
   _create_mocks "$TEST_TMP/bin"
 
@@ -341,6 +444,88 @@ test_spaces_in_arguments() {
   teardown
 }
 
+test_root_user_rejected() {
+  setup
+  MOCK_ID_U=0
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$TEST_TMP/mnt"
+  assert_status "exits 1 when run as root" 1 "$RUN_STATUS"
+  assert_contains "reports do not run as root" "$RUN_STDOUT" "do not run as root"
+  _test_root_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_eq "mount never invoked when run as root" "" "$_test_root_mount_log"
+  teardown
+}
+
+test_user_writable_mount_point_never_calls_sudo() {
+  setup
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$TEST_TMP/mnt"
+  assert_status "exits 0 mounting to user-writable path" 0 "$RUN_STATUS"
+  _test_sudo_log=$(cat "$SUDO_LOG" 2>/dev/null || true)
+  assert_eq "sudo never invoked for user-writable path" "" "$_test_sudo_log"
+  teardown
+}
+
+test_restricted_parent_dir_prompts_sudo_and_chowns() {
+  setup
+  _test_restricted_vol="$TEST_TMP/mock_volumes"
+  mkdir -p "$_test_restricted_vol"
+  chmod 555 "$_test_restricted_vol"
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_test_restricted_vol/nas"
+  assert_status "exits 0 mounting to restricted parent dir" 0 "$RUN_STATUS"
+  _test_sudo_log=$(cat "$SUDO_LOG" 2>/dev/null || true)
+  assert_contains "sudo -v authenticated" "$_test_sudo_log" "-v"
+  assert_contains "sudo mkdir -p created mount point" "$_test_sudo_log" "mkdir -p $_test_restricted_vol/nas"
+  assert_contains "sudo chown assigned ownership to user" "$_test_sudo_log" "chown 501:20 $_test_restricted_vol/nas"
+  _test_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_contains "mount invoked with correct mount point" "$_test_mount_log" "//server/share $_test_restricted_vol/nas"
+  teardown
+}
+
+test_preexisting_dir_owned_by_root_chowns_to_user() {
+  setup
+  _test_root_mnt="$TEST_TMP/root_mnt"
+  mkdir -p "$_test_root_mnt"
+  MOCK_STAT_UID=0
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_test_root_mnt"
+  assert_status "exits 0 mounting to root-owned dir" 0 "$RUN_STATUS"
+  _test_sudo_log=$(cat "$SUDO_LOG" 2>/dev/null || true)
+  assert_contains "sudo -v authenticated" "$_test_sudo_log" "-v"
+  assert_contains "sudo chown assigned ownership to user" "$_test_sudo_log" "chown 501:20 $_test_root_mnt"
+  assert_not_contains "sudo mkdir not called for pre-existing dir" "$_test_sudo_log" "mkdir"
+  teardown
+}
+
+test_sudo_auth_failure_is_fatal() {
+  setup
+  _test_restricted_vol="$TEST_TMP/mock_volumes"
+  mkdir -p "$_test_restricted_vol"
+  chmod 555 "$_test_restricted_vol"
+  MOCK_SUDO_V_EXIT=1
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_test_restricted_vol/nas"
+  assert_status "exits 1 on sudo auth failure" 1 "$RUN_STATUS"
+  assert_contains "reports sudo authentication failed" "$RUN_STDOUT" "sudo authentication failed"
+  _test_mount_log=$(cat "$MOUNT_LOG" 2>/dev/null || true)
+  assert_eq "mount never invoked when sudo fails" "" "$_test_mount_log"
+  teardown
+}
+
+test_mount_failure_removes_sudo_created_mount_point() {
+  setup
+  _test_restricted_vol="$TEST_TMP/mock_volumes"
+  mkdir -p "$_test_restricted_vol"
+  chmod 555 "$_test_restricted_vol"
+  MOCK_MOUNT_EXIT=1
+  run_capture "$REPO_DIR/macos/mount-smb.sh" "//server/share" "$_test_restricted_vol/nas"
+  assert_status "exits non-zero when mount fails" 1 "$RUN_STATUS"
+  _test_sudo_log=$(cat "$SUDO_LOG" 2>/dev/null || true)
+  assert_contains "sudo rmdir removes created mount point" "$_test_sudo_log" "rmdir $_test_restricted_vol/nas"
+  if [ -d "$_test_restricted_vol/nas" ]; then
+    fail "removes sudo-created mount point on mount failure" "directory still exists"
+  else
+    pass "removes sudo-created mount point on mount failure"
+  fi
+  teardown
+}
+
 main() {
   test_help_short
   test_help_long
@@ -349,6 +534,12 @@ main() {
   test_unknown_option
   test_empty_args
   test_non_darwin_os
+  test_root_user_rejected
+  test_user_writable_mount_point_never_calls_sudo
+  test_restricted_parent_dir_prompts_sudo_and_chowns
+  test_preexisting_dir_owned_by_root_chowns_to_user
+  test_sudo_auth_failure_is_fatal
+  test_mount_failure_removes_sudo_created_mount_point
   test_missing_share_in_url
   test_successful_mount_default_opts
   test_normalize_url_slashes
