@@ -81,6 +81,54 @@ macos/keep-awake.sh
 macos/keep-awake.sh claude
 ```
 
+### bin/ensure-agent-settings.sh
+
+Monitors and ensures symlinks and generated build artifacts from `agent-settings` are intact.
+
+```sh
+bin/ensure-agent-settings.sh [-h|--help] [-c|--check] [-r|--repair] [-m|--mode notify|auto-restore] [--set-mode notify|auto-restore] [-n|--notify|--no-notify] [-i|--install-service] [-u|--uninstall-service] [-s|--status] [-d|--dir dir] [-q|--quiet]
+```
+
+Options:
+- `-c`, `--check`: Check symlinks and build artifacts without modifying anything. Exits 0 if intact, 1 if broken.
+- `-r`, `--repair`: Inspect and repair missing build artifacts or broken symlinks via `install.sh`.
+- `-m`, `--mode <notify|auto-restore>`: Set execution mode for this run.
+- `--set-mode <notify|auto-restore>`: Persist default mode to configuration file.
+- `-n`, `--notify`: Enable desktop notifications (`osascript` on macOS, `notify-send` on Linux).
+- `--no-notify`: Suppress desktop notifications.
+- `-i`, `--install-service`: Install and activate background event-driven service (macOS `launchd` or Linux `systemd` user `.path`).
+- `-u`, `--uninstall-service`: Disable and remove background event-driven service.
+- `-s`, `--status`: Display service status, configuration, and link health.
+- `-d`, `--dir <dir>`: Path to `agent-settings` repository (default: `~/src/github/kjiwa/agent-settings`).
+- `-q`, `--quiet`: Suppress non-error output.
+- `-h`, `--help`: Show usage.
+
+Behavior:
+- Operates portably across macOS and Linux.
+- In `notify` mode (default), broken items trigger a desktop notification with remediation instructions and exit 1.
+- In `auto-restore` mode, broken items trigger `install.sh` in `agent-settings` to restore build artifacts and symlinks, then notify on completion.
+- Background services use OS-native file monitoring (macOS `launchd` `WatchPaths`, Linux `systemd` `.path` units) to detect changes immediately with zero idle polling or battery drain.
+- Configuration is loaded from `${XDG_CONFIG_HOME:-~/.config}/workstation-scripts/ensure-agent-settings.conf`.
+
+Examples:
+
+```sh
+# Health check
+bin/ensure-agent-settings.sh --check
+
+# Manual repair
+bin/ensure-agent-settings.sh --repair
+
+# Set default mode to auto-restore
+bin/ensure-agent-settings.sh --set-mode auto-restore
+
+# Install background service
+bin/ensure-agent-settings.sh --install-service
+
+# Check service and link status
+bin/ensure-agent-settings.sh --status
+```
+
 ## Development
 
 Run the test suite and repository consistency checks:
