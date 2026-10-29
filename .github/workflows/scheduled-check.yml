@@ -1,0 +1,12 @@
+name: scheduled-check
+# Kept apart from check.yml: GitHub disables a scheduled workflow after 60
+# days without repository activity, and that would otherwise take this
+# file's push and pull_request triggers with it.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
