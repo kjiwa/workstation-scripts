@@ -147,10 +147,18 @@ test_docker_daemon_unreachable_is_skipped() {
   teardown
 }
 
+_make_core_path() {
+  mkdir -p "$TEST_TMP/core"
+  for _core_tool in uname id basename dirname du awk find head grep sed rm rmdir mkdir cat sleep sort; do
+    ln -sf "$(command -v "$_core_tool")" "$TEST_TMP/core/$_core_tool"
+  done
+}
+
 test_missing_tools_are_skipped() {
   setup
   rm -f "$TEST_TMP/bin/brew" "$TEST_TMP/bin/uv" "$TEST_TMP/bin/npm" "$TEST_TMP/bin/docker"
-  PATH="$TEST_TMP/bin:/usr/bin:/bin"
+  _make_core_path
+  PATH="$TEST_TMP/bin:$TEST_TMP/core"
   run_capture "$REPO_DIR/macos/prune-caches.sh"
   assert_status "exits 0 with tools missing" 0 "$RUN_STATUS"
   assert_contains "reports brew missing" "$RUN_STDOUT" "skipping brew: not found"
@@ -278,10 +286,10 @@ test_install_agent_writes_plist_and_loads() {
   setup
   run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent
   assert_status "exits 0" 0 "$RUN_STATUS"
-  _test_plist="$HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist"
+  _test_plist="$HOME/Library/LaunchAgents/local.workstation-scripts.prune-caches.plist"
   _test_content="$(cat "$_test_plist")"
   _test_script="$(cd "$REPO_DIR/macos" && pwd -P)/prune-caches.sh"
-  assert_contains "has label" "$_test_content" "<string>com.github.kjiwa.prune-caches</string>"
+  assert_contains "has label" "$_test_content" "<string>local.workstation-scripts.prune-caches</string>"
   assert_contains "has absolute script path" "$_test_content" "<string>$_test_script</string>"
   assert_contains "runs on Sunday" "$_test_content" "<key>Weekday</key>
     <integer>0</integer>"
@@ -294,7 +302,7 @@ test_install_agent_writes_plist_and_loads() {
   assert_contains "logs stderr" "$_test_content" "<key>StandardErrorPath</key>
   <string>$HOME/Library/Logs/prune-caches.log</string>"
   assert_contains "sets Homebrew PATH" "$_test_content" "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>"
-  assert_eq "calls bootout then bootstrap" "launchctl bootout gui/$(id -u)/com.github.kjiwa.prune-caches
+  assert_eq "calls bootout then bootstrap" "launchctl bootout gui/$(id -u)/local.workstation-scripts.prune-caches
 launchctl bootstrap gui/$(id -u) $_test_plist" "$(grep '^launchctl' "$TOOL_LOG")"
   assert_eq "plist lints" 0 "$(plutil -lint "$_test_plist" >/dev/null 2>&1; echo $?)"
   teardown
@@ -305,10 +313,10 @@ test_install_agent_is_idempotent() {
   MOCK_BOOTOUT_EXIT=1
   run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent
   assert_status "first install exits 0" 0 "$RUN_STATUS"
-  _test_first="$(cat "$HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist")"
+  _test_first="$(cat "$HOME/Library/LaunchAgents/local.workstation-scripts.prune-caches.plist")"
   run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent
   assert_status "reinstall exits 0 when bootout fails" 0 "$RUN_STATUS"
-  assert_eq "plist unchanged" "$_test_first" "$(cat "$HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist")"
+  assert_eq "plist unchanged" "$_test_first" "$(cat "$HOME/Library/LaunchAgents/local.workstation-scripts.prune-caches.plist")"
   assert_eq "bootstraps each time" 2 "$(grep -c '^launchctl bootstrap' "$TOOL_LOG")"
   teardown
 }
@@ -317,7 +325,7 @@ test_install_agent_dry_run_changes_nothing() {
   setup
   run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent --dry-run
   assert_status "exits 0" 0 "$RUN_STATUS"
-  assert_contains "reports write" "$RUN_STDOUT" "would write $HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist"
+  assert_contains "reports write" "$RUN_STDOUT" "would write $HOME/Library/LaunchAgents/local.workstation-scripts.prune-caches.plist"
   assert_contains "reports bootout" "$RUN_STDOUT" "would run launchctl bootout"
   assert_contains "reports bootstrap" "$RUN_STDOUT" "would run launchctl bootstrap"
   assert_eq "writes no plist" no "$(_exists "$HOME/Library")"
