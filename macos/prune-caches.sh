@@ -5,10 +5,15 @@ readonly CLAUDE_TMP_MAX_AGE_DAYS=7
 readonly CLAUDE_TMP_INTERNAL_ENTRIES="bash-edit-diff plugin-tool-staging"
 readonly TF_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-$HOME/.terraform.d/plugin-cache}"
 readonly SRC_DIRS="${PRUNE_SRC_DIRS:-$HOME/src}"
+readonly AGENT_LABEL="com.github.kjiwa.prune-caches"
+readonly AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+readonly AGENT_LOG="$HOME/Library/Logs/prune-caches.log"
+readonly AGENT_PATH_ENV="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 readonly CLAUDE_TMP_DIR="${PRUNE_CLAUDE_TMP_DIR:-/private/tmp/claude-$(id -u)}"
 
 _prog=""
 _dry_run=0
+_install_agent=0
 _failed=0
 _step_kb=0
 _step_count=0
@@ -16,7 +21,7 @@ _step_count=0
 _usage() {
   _usage_prog="$1"
   cat <<EOF
-Usage: $_usage_prog [-h|--help] [-n|--dry-run]
+Usage: $_usage_prog [-h|--help] [-n|--dry-run] [--install-agent]
 
 Prune regenerable caches while keeping data that is still in use.
 
@@ -24,6 +29,11 @@ Options:
   -h, --help     Show this help message and exit.
   -n, --dry-run  Print each action as 'would remove <path>' or
                  'would run <command>' and change nothing.
+      --install-agent
+                 Install and load a LaunchAgent that runs this script
+                 weekly (Sundays 10:00), replacing a loaded one. Logs to
+                 ~/Library/Logs/prune-caches.log. With --dry-run, print
+                 what would be written and run.
 
 Behavior:
   - Runs 'brew cleanup', 'uv cache prune', 'npm cache verify', and
@@ -261,6 +271,98 @@ _prune_claude_tmp() {
   _report_step "claude tmp"
 }
 
+_xml_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+_script_path() {
+  _script_path_dir="$(cd "$(dirname "$0")" && pwd -P)"
+  printf '%s/%s' "$_script_path_dir" "$(basename "$0")"
+}
+
+_agent_plist_content() {
+  _agent_plist_content_script="$(_xml_escape "$1")"
+  _agent_plist_content_log="$(_xml_escape "$AGENT_LOG")"
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$AGENT_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$_agent_plist_content_script</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>$_agent_plist_content_log</string>
+  <key>StandardErrorPath</key>
+  <string>$_agent_plist_content_log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>$AGENT_PATH_ENV</string>
+  </dict>
+</dict>
+</plist>
+EOF
+}
+
+_write_agent_plist() {
+  mkdir -p "$(dirname "$AGENT_PLIST")" "$(dirname "$AGENT_LOG")"
+  _agent_plist_content "$1" >"$AGENT_PLIST"
+  printf 'wrote %s\n' "$AGENT_PLIST"
+}
+
+_lint_agent_plist() {
+  if ! command -v plutil >/dev/null 2>&1; then
+    _warn "skipping plist validation: plutil not found"
+    return 0
+  fi
+  if ! plutil -lint "$AGENT_PLIST" >/dev/null; then
+    _warn "error: invalid plist: $AGENT_PLIST"
+    return 1
+  fi
+}
+
+_load_agent() {
+  _load_agent_domain="gui/$(id -u)"
+  launchctl bootout "$_load_agent_domain/$AGENT_LABEL" >/dev/null 2>&1 || true
+  if ! launchctl bootstrap "$_load_agent_domain" "$AGENT_PLIST"; then
+    _warn "error: launchctl bootstrap failed"
+    return 1
+  fi
+  printf 'loaded %s\n' "$AGENT_LABEL"
+}
+
+_dry_run_install_agent() {
+  printf 'would write %s\n' "$AGENT_PLIST"
+  _agent_plist_content "$1"
+  printf 'would run plutil -lint %s\n' "$AGENT_PLIST"
+  printf 'would run launchctl bootout gui/%s/%s\n' "$(id -u)" "$AGENT_LABEL"
+  printf 'would run launchctl bootstrap gui/%s %s\n' "$(id -u)" "$AGENT_PLIST"
+}
+
+_install_agent_main() {
+  _install_agent_main_script="$(_script_path)"
+  if [ "$_dry_run" -eq 1 ]; then
+    _dry_run_install_agent "$_install_agent_main_script"
+    return 0
+  fi
+  _write_agent_plist "$_install_agent_main_script"
+  _lint_agent_plist || return 1
+  _load_agent
+}
+
 main() {
   _prog="$(basename "$0")"
 
@@ -273,6 +375,10 @@ main() {
         _dry_run=1
         shift
         ;;
+      --install-agent)
+        _install_agent=1
+        shift
+        ;;
       *)
         _exit_usage 1
         ;;
@@ -280,6 +386,11 @@ main() {
   done
 
   _check_platform
+
+  if [ "$_install_agent" -eq 1 ]; then
+    _install_agent_main || exit 1
+    exit 0
+  fi
 
   _prune_brew
   _prune_uv

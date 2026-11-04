@@ -86,11 +86,15 @@ macos/keep-awake.sh claude
 Prunes regenerable caches while keeping data that is still in use.
 
 ```sh
-macos/prune-caches.sh [-h|--help] [-n|--dry-run]
+macos/prune-caches.sh [-h|--help] [-n|--dry-run] [--install-agent]
 ```
 
 Options:
 - `-n`, `--dry-run`: Print each action as `would remove <path>` or `would run <command>` and change nothing.
+- `--install-agent`: Write `~/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist` and load it with
+  `launchctl bootout` then `launchctl bootstrap`, replacing a loaded agent. The agent runs this script Sundays at
+  10:00, logs to `~/Library/Logs/prune-caches.log`, and gets a `PATH` that includes `/opt/homebrew/bin`. The plist is
+  checked with `plutil -lint`. With `--dry-run`, prints what would be written and run.
 - `-h`, `--help`: Show usage.
 
 Behavior:
@@ -113,6 +117,9 @@ macos/prune-caches.sh --dry-run
 
 # Prune
 macos/prune-caches.sh
+
+# Install the weekly LaunchAgent
+macos/prune-caches.sh --install-agent
 ```
 
 ## Development

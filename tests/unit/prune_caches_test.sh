@@ -35,6 +35,12 @@ printf '%s %s\n' "$(basename "$0")" "$*" >> "$TOOL_LOG"
 if [ "$(basename "$0")" = "docker" ] && [ "${1:-}" = "info" ]; then
   exit "${MOCK_DOCKER_INFO_EXIT:-0}"
 fi
+if [ "$(basename "$0")" = "launchctl" ] && [ "${1:-}" = "bootout" ]; then
+  exit "${MOCK_BOOTOUT_EXIT:-0}"
+fi
+if [ "$(basename "$0")" = "plutil" ]; then
+  exit "${MOCK_PLUTIL_EXIT:-0}"
+fi
 exit 0
 MOCK
   chmod +x "$_create_mock_tool_dir/$_create_mock_tool_name"
@@ -68,6 +74,8 @@ setup() {
   export TOOL_LOG="$TEST_TMP/tool.log"
   export UNAME_OS="Darwin"
   export MOCK_DOCKER_INFO_EXIT=0
+  export MOCK_BOOTOUT_EXIT=0
+  export MOCK_PLUTIL_EXIT=0
   export HOME="$TEST_TMP/home"
   export TF_PLUGIN_CACHE_DIR="$TEST_TMP/plugin-cache"
   export PRUNE_SRC_DIRS="$TEST_TMP/src"
@@ -76,7 +84,7 @@ setup() {
   : > "$TOOL_LOG"
 
   _create_mock_uname "$TEST_TMP/bin"
-  for _setup_tool in brew uv npm docker; do
+  for _setup_tool in brew uv npm docker launchctl plutil; do
     _create_mock_tool "$TEST_TMP/bin" "$_setup_tool"
   done
 
@@ -100,6 +108,7 @@ test_help_and_invalid_option() {
   assert_status "exits 0 on --help" 0 "$RUN_STATUS"
   assert_contains "shows usage" "$RUN_STDOUT" "Usage: prune-caches.sh"
   assert_contains "documents dry-run" "$RUN_STDOUT" "--dry-run"
+  assert_contains "documents install-agent" "$RUN_STDOUT" "--install-agent"
   run_capture "$REPO_DIR/macos/prune-caches.sh" -x
   assert_status "exits 1 on invalid option" 1 "$RUN_STATUS"
   assert_contains "shows usage on invalid option" "$RUN_STDOUT" "Usage: prune-caches.sh"
@@ -253,6 +262,76 @@ test_dry_run_changes_nothing() {
   teardown
 }
 
+test_install_agent_writes_plist_and_loads() {
+  setup
+  run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent
+  assert_status "exits 0" 0 "$RUN_STATUS"
+  _test_plist="$HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist"
+  _test_content="$(cat "$_test_plist")"
+  _test_script="$(cd "$REPO_DIR/macos" && pwd -P)/prune-caches.sh"
+  assert_contains "has label" "$_test_content" "<string>com.github.kjiwa.prune-caches</string>"
+  assert_contains "has absolute script path" "$_test_content" "<string>$_test_script</string>"
+  assert_contains "runs on Sunday" "$_test_content" "<key>Weekday</key>
+    <integer>0</integer>"
+  assert_contains "runs at 10:00" "$_test_content" "<key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>"
+  assert_contains "logs stdout" "$_test_content" "<key>StandardOutPath</key>
+  <string>$HOME/Library/Logs/prune-caches.log</string>"
+  assert_contains "logs stderr" "$_test_content" "<key>StandardErrorPath</key>
+  <string>$HOME/Library/Logs/prune-caches.log</string>"
+  assert_contains "sets Homebrew PATH" "$_test_content" "<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>"
+  assert_eq "calls bootout then bootstrap" "launchctl bootout gui/$(id -u)/com.github.kjiwa.prune-caches
+launchctl bootstrap gui/$(id -u) $_test_plist" "$(grep '^launchctl' "$TOOL_LOG")"
+  assert_eq "plist lints" 0 "$(plutil -lint "$_test_plist" >/dev/null 2>&1; echo $?)"
+  teardown
+}
+
+test_install_agent_is_idempotent() {
+  setup
+  MOCK_BOOTOUT_EXIT=1
+  run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent
+  assert_status "first install exits 0" 0 "$RUN_STATUS"
+  _test_first="$(cat "$HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist")"
+  run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent
+  assert_status "reinstall exits 0 when bootout fails" 0 "$RUN_STATUS"
+  assert_eq "plist unchanged" "$_test_first" "$(cat "$HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist")"
+  assert_eq "bootstraps each time" 2 "$(grep -c '^launchctl bootstrap' "$TOOL_LOG")"
+  teardown
+}
+
+test_install_agent_dry_run_changes_nothing() {
+  setup
+  run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent --dry-run
+  assert_status "exits 0" 0 "$RUN_STATUS"
+  assert_contains "reports write" "$RUN_STDOUT" "would write $HOME/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist"
+  assert_contains "reports bootout" "$RUN_STDOUT" "would run launchctl bootout"
+  assert_contains "reports bootstrap" "$RUN_STDOUT" "would run launchctl bootstrap"
+  assert_eq "writes no plist" no "$(_exists "$HOME/Library")"
+  assert_eq "runs no tools" "" "$(cat "$TOOL_LOG")"
+  teardown
+}
+
+test_install_agent_invalid_plist_fails() {
+  setup
+  MOCK_PLUTIL_EXIT=1
+  run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent
+  assert_status "exits 1" 1 "$RUN_STATUS"
+  assert_contains "reports invalid plist" "$RUN_STDOUT" "invalid plist"
+  assert_not_contains "does not load" "$(cat "$TOOL_LOG")" "launchctl"
+  teardown
+}
+
+test_install_agent_rejects_extra_option() {
+  setup
+  run_capture "$REPO_DIR/macos/prune-caches.sh" --install-agent --bogus
+  assert_status "exits 1" 1 "$RUN_STATUS"
+  assert_contains "shows usage" "$RUN_STDOUT" "Usage: prune-caches.sh"
+  assert_eq "writes nothing" no "$(_exists "$HOME/Library")"
+  teardown
+}
+
 main() {
   test_help_and_invalid_option
   test_non_darwin_os
@@ -263,6 +342,11 @@ main() {
   test_terraform_skipped_when_source_dir_missing
   test_claude_tmp_prune
   test_dry_run_changes_nothing
+  test_install_agent_writes_plist_and_loads
+  test_install_agent_is_idempotent
+  test_install_agent_dry_run_changes_nothing
+  test_install_agent_invalid_plist_fails
+  test_install_agent_rejects_extra_option
   test_summary
 }
 
