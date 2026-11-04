@@ -81,6 +81,40 @@ macos/keep-awake.sh
 macos/keep-awake.sh claude
 ```
 
+### macos/prune-caches.sh
+
+Prunes regenerable caches while keeping data that is still in use.
+
+```sh
+macos/prune-caches.sh [-h|--help] [-n|--dry-run]
+```
+
+Options:
+- `-n`, `--dry-run`: Print each action as `would remove <path>` or `would run <command>` and change nothing.
+- `-h`, `--help`: Show usage.
+
+Behavior:
+- Runs `brew cleanup`, `uv cache prune`, `npm cache verify`, `docker image prune -f`, and `docker builder prune -f`.
+  Stopped containers and Docker volumes are left alone.
+- Removes Terraform plugin cache versions that no `.terraform.lock.hcl` under the source directories pins, plus every
+  symlink in the cache. The cache is `$TF_PLUGIN_CACHE_DIR` (default `~/.terraform.d/plugin-cache`); the source
+  directories are the colon-separated `$PRUNE_SRC_DIRS` (default `~/src`). Skipped if a source directory is missing.
+- Removes Claude session directories and loose files under `$PRUNE_CLAUDE_TMP_DIR` (default `/private/tmp/claude-<uid>`)
+  that contain nothing modified in the last 7 days. `bash-edit-diff` and `plugin-tool-staging` are kept, and symlinks
+  are never followed.
+- Reports a missing tool or an unreachable Docker daemon on stderr and skips it.
+- Requires macOS (Darwin).
+
+Examples:
+
+```sh
+# Preview what would be removed
+macos/prune-caches.sh --dry-run
+
+# Prune
+macos/prune-caches.sh
+```
+
 ## Development
 
 Run the test suite and repository consistency checks:
