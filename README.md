@@ -93,7 +93,7 @@ Options:
 - `-n`, `--dry-run`: Print each action as `would remove <path>` or `would run <command>` and change nothing.
 - `--install-agent`: Write `~/Library/LaunchAgents/com.github.kjiwa.prune-caches.plist` and load it with
   `launchctl bootout` then `launchctl bootstrap`, replacing a loaded agent. The agent runs this script Sundays at
-  10:00, logs to `~/Library/Logs/prune-caches.log`, and gets a `PATH` that includes `/opt/homebrew/bin`. The plist is
+  10:00, logs to `~/Library/Logs/prune-caches.log`, and gets a `PATH` that includes `/opt/homebrew/bin`, `~/.local/bin` and the default fnm Node. The plist is
   checked with `plutil -lint`. With `--dry-run`, prints what would be written and run.
 - `-h`, `--help`: Show usage.
 
@@ -102,7 +102,7 @@ Behavior:
   Stopped containers and Docker volumes are left alone.
 - Removes Terraform plugin cache versions that no `.terraform.lock.hcl` under the source directories pins, plus every
   symlink in the cache. The cache is `$TF_PLUGIN_CACHE_DIR` (default `~/.terraform.d/plugin-cache`); the source
-  directories are the colon-separated `$PRUNE_SRC_DIRS` (default `~/src`). Skipped if a source directory is missing.
+  directories are the colon-separated `$PRUNE_SRC_DIRS` (default `~/src`). Skipped if a source directory is missing or holds no lock files.
 - Removes Claude session directories and loose files under `$PRUNE_CLAUDE_TMP_DIR` (default `/private/tmp/claude-<uid>`)
   that contain nothing modified in the last 7 days. `bash-edit-diff` and `plugin-tool-staging` are kept, and symlinks
   are never followed.

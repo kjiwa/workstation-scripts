@@ -3,12 +3,13 @@ set -eu
 
 readonly CLAUDE_TMP_MAX_AGE_DAYS=7
 readonly CLAUDE_TMP_INTERNAL_ENTRIES="bash-edit-diff plugin-tool-staging"
-readonly TF_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-$HOME/.terraform.d/plugin-cache}"
+_tf_cache_dir="${TF_PLUGIN_CACHE_DIR:-$HOME/.terraform.d/plugin-cache}"
+readonly TF_CACHE_DIR="${_tf_cache_dir%/}"
 readonly SRC_DIRS="${PRUNE_SRC_DIRS:-$HOME/src}"
 readonly AGENT_LABEL="com.github.kjiwa.prune-caches"
 readonly AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
 readonly AGENT_LOG="$HOME/Library/Logs/prune-caches.log"
-readonly AGENT_PATH_ENV="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+readonly AGENT_PATH_ENV="$HOME/.local/share/fnm/aliases/default/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 readonly CLAUDE_TMP_DIR="${PRUNE_CLAUDE_TMP_DIR:-/private/tmp/claude-$(id -u)}"
 
 _prog=""
@@ -43,7 +44,7 @@ Behavior:
     under the source directories pins, and every symlink in the cache.
     Cache: \$TF_PLUGIN_CACHE_DIR (default ~/.terraform.d/plugin-cache).
     Source directories: colon-separated \$PRUNE_SRC_DIRS (default ~/src).
-    Skipped if a source directory is missing.
+    Skipped if a source directory is missing or holds no lock files.
   - Removes Claude session directories and loose files under
     \$PRUNE_CLAUDE_TMP_DIR (default /private/tmp/claude-<uid>) that
     contain nothing modified in the last $CLAUDE_TMP_MAX_AGE_DAYS days.
@@ -209,6 +210,10 @@ _prune_terraform() {
     _warn "skipping terraform: cannot determine pinned versions"
     return 0
   fi
+  if [ -z "$_prune_terraform_pins" ]; then
+    _warn "skipping terraform: no .terraform.lock.hcl found under $SRC_DIRS"
+    return 0
+  fi
   _prune_terraform_symlinks
   _prune_terraform_versions "$_prune_terraform_pins"
   _report_step "terraform"
@@ -216,7 +221,8 @@ _prune_terraform() {
 
 _is_stale() {
   _is_stale_path="$1"
-  [ -z "$(find "$_is_stale_path" -mtime "-$CLAUDE_TMP_MAX_AGE_DAYS" -print | head -n 1)" ]
+  _is_stale_recent="$(find "$_is_stale_path" -mtime "-$CLAUDE_TMP_MAX_AGE_DAYS" -print 2>/dev/null)" || return 1
+  [ -z "$_is_stale_recent" ]
 }
 
 _prune_if_stale() {
@@ -338,8 +344,11 @@ _load_agent() {
   _load_agent_domain="gui/$(id -u)"
   launchctl bootout "$_load_agent_domain/$AGENT_LABEL" >/dev/null 2>&1 || true
   if ! launchctl bootstrap "$_load_agent_domain" "$AGENT_PLIST"; then
-    _warn "error: launchctl bootstrap failed"
-    return 1
+    sleep 2
+    if ! launchctl bootstrap "$_load_agent_domain" "$AGENT_PLIST"; then
+      _warn "error: launchctl bootstrap failed"
+      return 1
+    fi
   fi
   printf 'loaded %s\n' "$AGENT_LABEL"
 }

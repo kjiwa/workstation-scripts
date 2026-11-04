@@ -198,6 +198,18 @@ test_terraform_skipped_when_source_dir_missing() {
   teardown
 }
 
+test_terraform_skipped_when_no_lock_files() {
+  setup
+  _make_provider hashicorp aws 6.60.0
+  mkdir -p "$TEST_TMP/emptysrc"
+  PRUNE_SRC_DIRS="$TEST_TMP/emptysrc"
+  run_capture "$REPO_DIR/macos/prune-caches.sh"
+  assert_status "exits 0" 0 "$RUN_STATUS"
+  assert_contains "reports no lock files" "$RUN_STDOUT" "no .terraform.lock.hcl found"
+  assert_eq "keeps everything" yes "$(_exists "$TF_PLUGIN_CACHE_DIR/registry.terraform.io/hashicorp/aws/6.60.0")"
+  teardown
+}
+
 test_claude_tmp_prune() {
   setup
   _test_root="$PRUNE_CLAUDE_TMP_DIR"
@@ -281,7 +293,7 @@ test_install_agent_writes_plist_and_loads() {
   <string>$HOME/Library/Logs/prune-caches.log</string>"
   assert_contains "logs stderr" "$_test_content" "<key>StandardErrorPath</key>
   <string>$HOME/Library/Logs/prune-caches.log</string>"
-  assert_contains "sets Homebrew PATH" "$_test_content" "<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>"
+  assert_contains "sets Homebrew PATH" "$_test_content" "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>"
   assert_eq "calls bootout then bootstrap" "launchctl bootout gui/$(id -u)/com.github.kjiwa.prune-caches
 launchctl bootstrap gui/$(id -u) $_test_plist" "$(grep '^launchctl' "$TOOL_LOG")"
   assert_eq "plist lints" 0 "$(plutil -lint "$_test_plist" >/dev/null 2>&1; echo $?)"
@@ -340,6 +352,7 @@ main() {
   test_missing_tools_are_skipped
   test_terraform_prunes_unpinned_and_symlinks
   test_terraform_skipped_when_source_dir_missing
+  test_terraform_skipped_when_no_lock_files
   test_claude_tmp_prune
   test_dry_run_changes_nothing
   test_install_agent_writes_plist_and_loads
