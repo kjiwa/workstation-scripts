@@ -10,20 +10,6 @@ readonly SCRIPT_DIR
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 readonly REPO_DIR
 
-_create_mock_uname() {
-  _create_mock_uname_dir="$1"
-  cat <<'EOF' >"$_create_mock_uname_dir/uname"
-#!/bin/sh
-set -eu
-if [ "${1:-}" = "-s" ]; then
-  echo "${UNAME_OS:-Darwin}"
-  exit 0
-fi
-exec /usr/bin/uname "$@"
-EOF
-  chmod +x "$_create_mock_uname_dir/uname"
-}
-
 _create_mock_mount() {
   _create_mock_mount_dir="$1"
   cat <<'EOF' >"$_create_mock_mount_dir/mount"
@@ -137,7 +123,7 @@ EOF
 _create_mocks() {
   _create_mocks_dir="$1"
   mkdir -p "$_create_mocks_dir"
-  _create_mock_uname "$_create_mocks_dir"
+  create_mock_uname "$_create_mocks_dir"
   _create_mock_mount "$_create_mocks_dir"
   _create_mock_mdutil "$_create_mocks_dir"
   _create_mock_id "$_create_mocks_dir"

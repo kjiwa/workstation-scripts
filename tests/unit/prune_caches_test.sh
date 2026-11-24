@@ -11,20 +11,6 @@ REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 readonly REPO_DIR
 readonly OLD_STAMP="202001010000"
 
-_create_mock_uname() {
-  _create_mock_uname_dir="$1"
-  cat <<'MOCK' >"$_create_mock_uname_dir/uname"
-#!/bin/sh
-set -eu
-if [ "${1:-}" = "-s" ]; then
-  echo "${UNAME_OS:-Darwin}"
-  exit 0
-fi
-exec /usr/bin/uname "$@"
-MOCK
-  chmod +x "$_create_mock_uname_dir/uname"
-}
-
 _create_mock_tool() {
   _create_mock_tool_dir="$1"
   _create_mock_tool_name="$2"
@@ -83,7 +69,7 @@ setup() {
   mkdir -p "$HOME" "$TF_PLUGIN_CACHE_DIR" "$PRUNE_SRC_DIRS" "$PRUNE_CLAUDE_TMP_DIR" "$TEST_TMP/bin"
   : > "$TOOL_LOG"
 
-  _create_mock_uname "$TEST_TMP/bin"
+  create_mock_uname "$TEST_TMP/bin"
   for _setup_tool in brew uv npm docker launchctl plutil; do
     _create_mock_tool "$TEST_TMP/bin" "$_setup_tool"
   done
