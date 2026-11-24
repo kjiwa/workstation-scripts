@@ -89,9 +89,9 @@ test_streams_roam_rows() {
   assert_status "exits 0" 0 "$RUN_STATUS"
   _test_log="$(cat "$TOOL_LOG")"
   assert_contains "streams in compact style" "$_test_log" "log stream --style compact --predicate"
-  assert_contains "matches BSS transition rows" "$_test_log" "handleBssTransEvent@402"
+  assert_contains "matches BSS transition rows" "$_test_log" "handleBssTransEvent"
   assert_contains "matches association failure rows" "$_test_log" "Link down because assoc fail"
-  assert_contains "matches roam rows" "$_test_log" "handleRoam@977"
+  assert_contains "matches roam rows" "$_test_log" "handleRoam"
   teardown
 }
 
@@ -100,7 +100,7 @@ test_dry_run_changes_nothing() {
   run_capture "$SCRIPT" --dry-run
   assert_status "exits 0" 0 "$RUN_STATUS"
   assert_contains "reports the command" "$RUN_STDOUT" "would run log stream --style compact --predicate"
-  assert_contains "reports the predicate" "$RUN_STDOUT" "handleRoam@977"
+  assert_contains "reports the predicate" "$RUN_STDOUT" "handleRoam"
   assert_eq "runs no tools" "" "$(cat "$TOOL_LOG")"
   teardown
 }

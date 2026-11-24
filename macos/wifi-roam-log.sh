@@ -5,7 +5,7 @@ readonly AGENT_LABEL="local.workstation-scripts.wifi-roam-log"
 readonly AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
 readonly AGENT_LOG="$HOME/Library/Logs/wifi-roam.log"
 readonly AGENT_PATH_ENV="/usr/bin:/bin:/usr/sbin:/sbin"
-readonly PREDICATE='process == "kernel" AND (eventMessage CONTAINS "handleBssTransEvent@402" OR eventMessage CONTAINS "Link down because assoc fail" OR eventMessage CONTAINS "handleRoam@977")'
+readonly PREDICATE='process == "kernel" AND (eventMessage CONTAINS "handleBssTransEvent" OR eventMessage CONTAINS "Link down because assoc fail" OR eventMessage CONTAINS "handleRoam")'
 
 _prog=""
 _dry_run=0

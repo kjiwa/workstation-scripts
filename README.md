@@ -139,9 +139,11 @@ Options:
 - `-h`, `--help`: Show usage.
 
 Behavior:
-- Runs `log stream --style compact --predicate 'process == "kernel" AND (eventMessage CONTAINS "handleBssTransEvent@402"
-  OR eventMessage CONTAINS "Link down because assoc fail" OR eventMessage CONTAINS "handleRoam@977")'`, which matches
-  kernel BSS transition, association failure and roam rows.
+- Runs `log stream --style compact --predicate 'process == "kernel" AND (eventMessage CONTAINS "handleBssTransEvent"
+  OR eventMessage CONTAINS "Link down because assoc fail" OR eventMessage CONTAINS "handleRoam")'`, which matches
+  kernel BSS transition, association failure and roam rows. The predicate omits the kernel source line
+  numbers (`@402`), which change between macOS builds.
+- The log file is never rotated; delete it when the data is no longer needed.
 - Remove the agent with `launchctl bootout gui/<uid>/local.workstation-scripts.wifi-roam-log` and delete the plist.
 - Requires macOS (Darwin).
 
