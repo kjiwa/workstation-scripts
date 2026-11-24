@@ -69,6 +69,20 @@ run_capture() {
   fi
 }
 
+create_mock_uname() {
+  _create_mock_uname_dir="$1"
+  cat <<'MOCK' >"$_create_mock_uname_dir/uname"
+#!/bin/sh
+set -eu
+if [ "${1:-}" = "-s" ]; then
+  echo "${UNAME_OS:-Darwin}"
+  exit 0
+fi
+exec /usr/bin/uname "$@"
+MOCK
+  chmod +x "$_create_mock_uname_dir/uname"
+}
+
 test_summary() {
   printf '\n%d run, %d failed\n' "$TESTS_RUN" "$TESTS_FAILED"
   [ "$TESTS_RUN" -gt 0 ] && [ "$TESTS_FAILED" -eq 0 ]
