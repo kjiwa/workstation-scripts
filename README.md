@@ -122,6 +122,42 @@ macos/prune-caches.sh
 macos/prune-caches.sh --install-agent
 ```
 
+### macos/wifi-roam-log.sh
+
+Streams the kernel Wi-Fi roam rows. The unified log keeps them for about a day; a LaunchAgent running this script keeps them in a file.
+
+```sh
+macos/wifi-roam-log.sh [-h|--help] [-n|--dry-run] [--install-agent]
+```
+
+Options:
+- `-n`, `--dry-run`: Print `would run <command>` and change nothing.
+- `--install-agent`: Write `~/Library/LaunchAgents/local.workstation-scripts.wifi-roam-log.plist` and load it with
+  `launchctl bootout` then `launchctl bootstrap`, replacing a loaded agent. The agent runs this script at login
+  (`RunAtLoad`), restarts it if it exits (`KeepAlive`), and appends its output to `~/Library/Logs/wifi-roam.log`.
+  The plist is checked with `plutil -lint`. With `--dry-run`, prints what would be written and run.
+- `-h`, `--help`: Show usage.
+
+Behavior:
+- Runs `log stream --style compact --predicate 'process == "kernel" AND (eventMessage CONTAINS "handleBssTransEvent@402"
+  OR eventMessage CONTAINS "Link down because assoc fail" OR eventMessage CONTAINS "handleRoam@977")'`, which matches
+  kernel BSS transition, association failure and roam rows.
+- Remove the agent with `launchctl bootout gui/<uid>/local.workstation-scripts.wifi-roam-log` and delete the plist.
+- Requires macOS (Darwin).
+
+Examples:
+
+```sh
+# Preview the command
+macos/wifi-roam-log.sh --dry-run
+
+# Stream roam rows to the terminal
+macos/wifi-roam-log.sh
+
+# Install the LaunchAgent
+macos/wifi-roam-log.sh --install-agent
+```
+
 ## Development
 
 Run the test suite and repository consistency checks:
